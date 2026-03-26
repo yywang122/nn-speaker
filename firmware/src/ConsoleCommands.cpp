@@ -1,5 +1,7 @@
 #include "ConsoleCommands.h"
 
+#include <stdint.h>
+
 #include "AudioRecordPlayback.h"
 
 ConsoleCommands::ConsoleCommands(AudioRecordPlayback *audio_record_playback)
@@ -48,7 +50,8 @@ void ConsoleCommands::handleLine(const String &line)
 
     if (first == "record")
     {
-        const String arg = (first_space < 0) ? String("") : cmd.substring(first_space + 1);
+        String arg = (first_space < 0) ? String("") : cmd.substring(first_space + 1);
+        arg.trim();
         uint32_t duration_ms = 0;
         if (!parseDurationMs(arg, duration_ms))
         {
@@ -68,7 +71,8 @@ void ConsoleCommands::handleLine(const String &line)
 
     if (first == "play")
     {
-        const String arg = (first_space < 0) ? String("") : cmd.substring(first_space + 1);
+        String arg = (first_space < 0) ? String("") : cmd.substring(first_space + 1);
+        arg.trim();
         if (arg == "record")
         {
             if (!m_audio_record_playback)

@@ -13,6 +13,9 @@
 #include "Speaker.h"
 #include "IndicatorLight.h"
 #include "AudioKitHAL.h"
+#include "MemoryAssignment.h"
+#include "AudioRecordPlayback.h"
+#include "ConsoleCommands.h"
 
 // i2s config for using the internal ADC
 i2s_config_t adcI2SConfig = {
@@ -105,16 +108,15 @@ void applicationTask(void *param)
   }
 }
 
+static ConsoleCommands *g_console_commands = NULL;
+
 void setup()
 {
   Serial.begin(115200);
   delay(1000);
   Serial.println("Starting up");
 
-#ifdef BOARD_HAS_PSRAM
-  // Prefer external RAM for generic malloc to keep internal RAM for TLS handshake.
-  heap_caps_malloc_extmem_enable(0);
-#endif
+  applyMemoryAssignmentPolicy();
 
   // start up wifi
   // launch WiFi
@@ -126,13 +128,7 @@ void setup()
     delay(5000);
     //ESP.restart();
   }
-  Serial.printf("Total heap: %d\n", ESP.getHeapSize());
-  Serial.printf("Free heap: %d\n", ESP.getFreeHeap());
-  Serial.printf("Total PSRAM: %d\n", ESP.getPsramSize());
-  Serial.printf("Free PSRAM: %d\n", ESP.getFreePsram());
-  Serial.printf("Internal heap free: %u\n", heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
-  Serial.printf("Internal heap largest block: %u\n", heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
-  Serial.printf("Chip model: %s\n", ESP.getChipModel());
+  printMemoryAssignmentInfo();
 
   // startup SPIFFS for the wav files
   SPIFFS.begin();
@@ -153,6 +149,8 @@ void setup()
   I2SOutput *i2s_output = new I2SOutput();
   i2s_output->start(I2S_NUM_0, i2s_codec_pins, i2sCodecConfig);
   Speaker *speaker = new Speaker(i2s_output);
+  AudioRecordPlayback *audio_record_playback = new AudioRecordPlayback(i2s_sampler, i2s_output);
+  g_console_commands = new ConsoleCommands(audio_record_playback);
 
   // indicator light to show when we are listening
   IndicatorLight *indicator_light = new IndicatorLight();
@@ -182,5 +180,9 @@ void setup()
 
 void loop()
 {
+  if (g_console_commands)
+  {
+    g_console_commands->poll();
+  }
   vTaskDelay(1000);
 }

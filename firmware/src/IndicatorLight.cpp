@@ -2,13 +2,61 @@
 #include "IndicatorLight.h"
 #include "driver/uart.h"
 
-void uart2_send(char * buf)
+namespace
 {
-  while (*buf) {
-    Serial2.write(*buf);
-    vTaskDelay(2);
-    buf++;
-  }
+constexpr int LOCAL_LED_PIN = LED_BUILTIN;
+
+void uart2_send(const char *buf)
+{
+    while (*buf)
+    {
+        Serial2.write(*buf);
+        vTaskDelay(2);
+        buf++;
+    }
+}
+
+void setLocalLed(bool on)
+{
+    // Most ESP32 dev boards use active-high for the built-in LED.
+    digitalWrite(LOCAL_LED_PIN, on ? HIGH : LOW);
+}
+
+void applyStaticState(IndicatorState state)
+{
+    switch (state)
+    {
+    case OFF:
+        ledcWrite(0, 0);
+        uart2_send("{8701fe}");
+        setLocalLed(false);
+        break;
+    case ON:
+        ledcWrite(0, 255);
+        uart2_send("{8701ff}");
+        setLocalLed(true);
+        break;
+    case IDLE:
+        // dim white
+        ledcWrite(0, 24);
+        uart2_send("{8701ff}");
+        setLocalLed(false);
+        break;
+    case RECORDING:
+        // fallback brightness for built-in LED + external color command
+        ledcWrite(0, 255);
+        uart2_send("{8701f1}");
+        setLocalLed(true);
+        break;
+    case PLAYING:
+        ledcWrite(0, 180);
+        uart2_send("{8701f4}");
+        setLocalLed(true);
+        break;
+    default:
+        break;
+    }
+}
 }
 
 // This task does all the heavy lifting for our application
@@ -25,17 +73,12 @@ void indicatorLedTask(void *param)
             switch (indicator_light->getState())
             {
             case OFF:
-            {
-                ledcWrite(0, 0);
-                uart2_send((char *)"{8701fe}"); // off
-                break;
-            }
             case ON:
-            {
-                ledcWrite(0, 255);
-                uart2_send((char *)"{8701ff}"); // on
+            case IDLE:
+            case RECORDING:
+            case PLAYING:
+                applyStaticState(indicator_light->getState());
                 break;
-            }
             case PULSING:
             {
                 // do a nice pulsing effect
@@ -48,49 +91,29 @@ void indicatorLedTask(void *param)
                 }
                 break;
             }
-            case IDLE:
-            {
-                // dim white as IDLE
-                ledcWrite(0, 24);
-                uart2_send((char *)"{8701ff}");
-                break;
-            }
-            case RECORDING:
-            {
-                // red
-                ledcWrite(0, 255);
-                uart2_send((char *)"{8701f1}");
-                break;
-            }
-            case PLAYING:
-            {
-                // blue
-                ledcWrite(0, 200);
-                uart2_send((char *)"{8701f4}");
-                break;
-            }
             case ERROR:
             {
                 // blinking red until state changes
                 while (indicator_light->getState() == ERROR)
                 {
                     ledcWrite(0, 255);
-                    uart2_send((char *)"{8701f1}");
+                    uart2_send("{8701f1}");
+                    setLocalLed(true);
                     vTaskDelay(pdMS_TO_TICKS(120));
                     if (indicator_light->getState() != ERROR)
                     {
                         break;
                     }
                     ledcWrite(0, 0);
-                    uart2_send((char *)"{8701fe}");
+                    uart2_send("{8701fe}");
+                    setLocalLed(false);
                     vTaskDelay(pdMS_TO_TICKS(120));
                 }
                 break;
             }
             default:
             {
-                ledcWrite(0, 0);
-                uart2_send((char *)"{8701fe}");
+                applyStaticState(OFF);
                 break;
             }
             }
@@ -100,10 +123,13 @@ void indicatorLedTask(void *param)
 
 IndicatorLight::IndicatorLight()
 {
+    pinMode(LOCAL_LED_PIN, OUTPUT);
+    setLocalLed(false);
+
     Serial2.begin(115200, SERIAL_8N1, 15, 19);
-    uart2_send((char *)"{8701ff}"); // on
+    uart2_send("{8701ff}"); // on
     vTaskDelay(100);
-    uart2_send((char *)"{8701fe}"); // off
+    uart2_send("{8701fe}"); // off
 
     // use the build in LED as an indicator - we'll set it up as a pwm output so we can make it glow nicely
     ledcSetup(0, 10000, 8);
@@ -120,6 +146,11 @@ IndicatorLight::IndicatorLight()
 void IndicatorLight::setState(IndicatorState state)
 {
     m_state = state;
+    // apply static states immediately so UI does not depend on task scheduling
+    if (state == OFF || state == ON || state == IDLE || state == RECORDING || state == PLAYING)
+    {
+        applyStaticState(state);
+    }
     xTaskNotify(m_taskHandle, 1, eSetBits);
 }
 

@@ -51,7 +51,7 @@ void indicatorLedTask(void *param)
             case IDLE:
             {
                 // dim white as IDLE
-                ledcWrite(0, 32);
+                ledcWrite(0, 24);
                 uart2_send((char *)"{8701ff}");
                 break;
             }
@@ -87,6 +87,12 @@ void indicatorLedTask(void *param)
                 }
                 break;
             }
+            default:
+            {
+                ledcWrite(0, 0);
+                uart2_send((char *)"{8701fe}");
+                break;
+            }
             }
         }
     }
@@ -107,6 +113,8 @@ IndicatorLight::IndicatorLight()
     m_state = IDLE;
     // set up the task for controlling the light
     xTaskCreate(indicatorLedTask, "Indicator LED Task", 4096, this, 1, &m_taskHandle);
+    // push initial LED state so it is applied immediately
+    setState(IDLE);
 }
 
 void IndicatorLight::setState(IndicatorState state)

@@ -43,13 +43,15 @@ void printMemoryAssignmentInfo()
 
 void runExercise2MemoryAssignmentOutput()
 {
-    constexpr size_t TEST_ALLOC_BYTES = 64 * 1024;
+    constexpr size_t INTERNAL_ALLOC_BYTES = 8 * 1024;
+    constexpr size_t DMA_ALLOC_BYTES = 4 * 1024;
+    constexpr size_t SPIRAM_ALLOC_BYTES = 64 * 1024;
 
     const MemorySnapshot before = captureSnapshot();
 
-    void *internal_ptr = heap_caps_malloc(TEST_ALLOC_BYTES, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    void *dma_ptr = heap_caps_malloc(TEST_ALLOC_BYTES, MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
-    void *spiram_ptr = heap_caps_malloc(TEST_ALLOC_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    void *internal_ptr = heap_caps_malloc(INTERNAL_ALLOC_BYTES, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    void *dma_ptr = heap_caps_malloc(DMA_ALLOC_BYTES, MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
+    void *spiram_ptr = heap_caps_malloc(SPIRAM_ALLOC_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 
     const MemorySnapshot after = captureSnapshot();
 
@@ -57,9 +59,9 @@ void runExercise2MemoryAssignmentOutput()
     Serial.printf("INTERNAL free: %u\n", static_cast<unsigned>(before.internal));
     Serial.printf("DMA free: %u\n", static_cast<unsigned>(before.dma));
     Serial.printf("SPIRAM free: %u\n", static_cast<unsigned>(before.spiram));
-    Serial.printf("INTERNAL allocation result: %s (%u bytes)\n", internal_ptr ? "SUCCESS" : "FAIL", static_cast<unsigned>(TEST_ALLOC_BYTES));
-    Serial.printf("DMA allocation result: %s (%u bytes)\n", dma_ptr ? "SUCCESS" : "FAIL", static_cast<unsigned>(TEST_ALLOC_BYTES));
-    Serial.printf("SPIRAM allocation result: %s (%u bytes)\n", spiram_ptr ? "SUCCESS" : "FAIL", static_cast<unsigned>(TEST_ALLOC_BYTES));
+    Serial.printf("INTERNAL allocation result: %s (%u bytes)\n", internal_ptr ? "SUCCESS" : "FAIL", static_cast<unsigned>(INTERNAL_ALLOC_BYTES));
+    Serial.printf("DMA allocation result: %s (%u bytes)\n", dma_ptr ? "SUCCESS" : "FAIL", static_cast<unsigned>(DMA_ALLOC_BYTES));
+    Serial.printf("SPIRAM allocation result: %s (%u bytes)\n", spiram_ptr ? "SUCCESS" : "FAIL", static_cast<unsigned>(SPIRAM_ALLOC_BYTES));
 
     Serial.println("=== After Allocation ===");
     Serial.printf("INTERNAL free: %u\n", static_cast<unsigned>(after.internal));

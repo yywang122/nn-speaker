@@ -5,7 +5,11 @@ enum IndicatorState
 {
     OFF,
     ON,
-    PULSING
+    PULSING,
+    IDLE,
+    RECORDING,
+    PLAYING,
+    ERROR
 };
 
 class IndicatorLight

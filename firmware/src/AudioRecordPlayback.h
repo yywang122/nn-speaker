@@ -18,6 +18,9 @@ private:
     static constexpr uint8_t CHANNELS = 1;
     static constexpr uint8_t BIT_DEPTH = 16;
     static constexpr uint32_t MAX_DURATION_MS = 60000;
+    static constexpr uint32_t CAPTURE_POLL_INTERVAL_MS = 10;
+    static constexpr uint32_t BACKEND_READY_TIMEOUT_MS = 600;
+    static constexpr uint32_t CAPTURE_EXTRA_TIMEOUT_MS = 2000;
 
     I2SSampler *m_sampler;
     I2SOutput *m_output;
@@ -33,6 +36,9 @@ public:
 
     bool record(uint32_t duration_ms);
     bool playRecorded();
+    void clearRecording();
+    size_t getRecordedBytes() const;
+    bool hasValidRecording() const;
 };
 
 class RecordedAudioSampleSource : public SampleSource

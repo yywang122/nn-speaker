@@ -1,5 +1,6 @@
 #include "ConsoleCommands.h"
 
+#include <ctype.h>
 #include <stdint.h>
 
 #include "AudioRecordPlayback.h"
@@ -7,7 +8,18 @@
 ConsoleCommands::ConsoleCommands(AudioRecordPlayback *audio_record_playback)
 {
     m_audio_record_playback = audio_record_playback;
-    m_line_buffer.reserve(96);
+    m_rx_length = 0;
+    m_rx_buffer[0] = '\0';
+}
+
+void ConsoleCommands::printHelp() const
+{
+    Serial.println("[CMD] Available commands:");
+    Serial.println("[CMD]   help");
+    Serial.println("[CMD]   record <duration_ms>");
+    Serial.println("[CMD]   record status");
+    Serial.println("[CMD]   record clear");
+    Serial.println("[CMD]   play record");
 }
 
 bool ConsoleCommands::parseDurationMs(const String &value, uint32_t &duration_ms) const
@@ -38,30 +50,98 @@ bool ConsoleCommands::parseDurationMs(const String &value, uint32_t &duration_ms
 
 void ConsoleCommands::handleLine(const String &line)
 {
-    String cmd = line;
-    cmd.trim();
-    if (cmd.length() == 0)
+    String cleaned = line;
+    cleaned.replace("\r", "");
+    cleaned.replace("\n", "");
+    cleaned.trim();
+
+    if (cleaned.length() == 0)
     {
         return;
     }
 
-    const int first_space = cmd.indexOf(' ');
-    const String first = (first_space < 0) ? cmd : cmd.substring(0, first_space);
+    String command;
+    String arg1;
+    String arg2;
 
-    if (first == "record")
+    int token_index = 0;
+    size_t i = 0;
+    while (i < cleaned.length())
     {
-        String arg = (first_space < 0) ? String("") : cmd.substring(first_space + 1);
-        arg.trim();
-        uint32_t duration_ms = 0;
-        if (!parseDurationMs(arg, duration_ms))
+        while (i < cleaned.length() && isspace(static_cast<unsigned char>(cleaned.charAt(i))))
+        {
+            i++;
+        }
+        if (i >= cleaned.length())
+        {
+            break;
+        }
+
+        size_t start = i;
+        while (i < cleaned.length() && !isspace(static_cast<unsigned char>(cleaned.charAt(i))))
+        {
+            i++;
+        }
+        const String token = cleaned.substring(start, i);
+
+        if (token_index == 0)
+        {
+            command = token;
+        }
+        else if (token_index == 1)
+        {
+            arg1 = token;
+        }
+        else if (token_index == 2)
+        {
+            arg2 = token;
+        }
+        token_index++;
+    }
+
+    if (command == "help")
+    {
+        if (token_index != 1)
+        {
+            Serial.println("[CMD] ERROR: usage: help");
+            return;
+        }
+        printHelp();
+        return;
+    }
+
+    if (command == "record")
+    {
+        if (!m_audio_record_playback)
+        {
+            Serial.println("[RECORD] ERROR: audio record/playback service is NULL");
+            return;
+        }
+
+        if (token_index == 2 && arg1 == "status")
+        {
+            Serial.printf("[RECORD] status: recorded_bytes=%u, valid=%s\n",
+                          static_cast<unsigned>(m_audio_record_playback->getRecordedBytes()),
+                          m_audio_record_playback->hasValidRecording() ? "yes" : "no");
+            return;
+        }
+
+        if (token_index == 2 && arg1 == "clear")
+        {
+            m_audio_record_playback->clearRecording();
+            return;
+        }
+
+        if (token_index != 2)
         {
             Serial.println("[RECORD] ERROR: usage: record <duration_ms>");
             return;
         }
 
-        if (!m_audio_record_playback)
+        uint32_t duration_ms = 0;
+        if (!parseDurationMs(arg1, duration_ms))
         {
-            Serial.println("[RECORD] ERROR: audio record/playback service is NULL");
+            Serial.println("[RECORD] ERROR: usage: record <duration_ms>");
             return;
         }
 
@@ -69,11 +149,9 @@ void ConsoleCommands::handleLine(const String &line)
         return;
     }
 
-    if (first == "play")
+    if (command == "play")
     {
-        String arg = (first_space < 0) ? String("") : cmd.substring(first_space + 1);
-        arg.trim();
-        if (arg == "record")
+        if (token_index == 2 && arg1 == "record")
         {
             if (!m_audio_record_playback)
             {
@@ -88,7 +166,8 @@ void ConsoleCommands::handleLine(const String &line)
         return;
     }
 
-    Serial.printf("[CMD] Unknown command: %s\n", cmd.c_str());
+    (void)arg2;
+    Serial.printf("[CMD] Unknown command: %s\n", cleaned.c_str());
 }
 
 void ConsoleCommands::poll()
@@ -104,15 +183,26 @@ void ConsoleCommands::poll()
 
         if (c == '\n')
         {
-            handleLine(m_line_buffer);
-            m_line_buffer = "";
+            m_rx_buffer[m_rx_length] = '\0';
+            handleLine(String(m_rx_buffer));
+            m_rx_length = 0;
+            m_rx_buffer[0] = '\0';
             continue;
         }
 
-        // bound check to avoid unbounded String growth
-        if (m_line_buffer.length() < 95)
+        if (c >= 32 && c <= 126)
         {
-            m_line_buffer += c;
+            if (m_rx_length < (RX_BUFFER_SIZE - 1))
+            {
+                m_rx_buffer[m_rx_length++] = c;
+                m_rx_buffer[m_rx_length] = '\0';
+            }
+            else
+            {
+                Serial.println("[CMD] ERROR: input line too long");
+                m_rx_length = 0;
+                m_rx_buffer[0] = '\0';
+            }
         }
     }
 }

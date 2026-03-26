@@ -1,6 +1,7 @@
 #include "AudioRecordPlayback.h"
 
 #include <algorithm>
+#include <esp_heap_caps.h>
 #include <stdlib.h>
 
 #include "I2SSampler.h"
@@ -42,6 +43,18 @@ int RecordedAudioSampleSource::getFrames(Frame_t *frames, int number_frames)
 bool RecordedAudioSampleSource::available()
 {
     return (m_samples != NULL) && (m_position < m_total_samples);
+}
+
+static void *allocateRecordingBuffer(size_t requested_bytes)
+{
+#ifdef BOARD_HAS_PSRAM
+    void *buffer = heap_caps_malloc(requested_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (buffer)
+    {
+        return buffer;
+    }
+#endif
+    return malloc(requested_bytes);
 }
 
 AudioRecordPlayback::AudioRecordPlayback(I2SSampler *sampler, I2SOutput *output)
@@ -94,14 +107,6 @@ bool AudioRecordPlayback::record(uint32_t duration_ms)
     }
 
     const size_t requested_samples = static_cast<size_t>(samples64);
-    const size_t ring_samples = static_cast<size_t>(m_sampler->getRingBufferSize());
-    if (requested_samples > ring_samples)
-    {
-        Serial.printf("[RECORD] ERROR: duration too long for ring buffer (requested_samples=%u, ring_samples=%u)\n",
-                      static_cast<unsigned>(requested_samples),
-                      static_cast<unsigned>(ring_samples));
-        return false;
-    }
 
     if (requested_samples > (SIZE_MAX / sizeof(int16_t)))
     {
@@ -112,7 +117,7 @@ bool AudioRecordPlayback::record(uint32_t duration_ms)
     const size_t requested_bytes = requested_samples * sizeof(int16_t);
 
     freeRecordingBuffer();
-    m_recorded_samples = static_cast<int16_t *>(malloc(requested_bytes));
+    m_recorded_samples = static_cast<int16_t *>(allocateRecordingBuffer(requested_bytes));
     const bool allocation_ok = (m_recorded_samples != NULL);
 
     Serial.println("[RECORD] Start recording...");
@@ -127,36 +132,89 @@ bool AudioRecordPlayback::record(uint32_t duration_ms)
         return false;
     }
 
-    const int start_index = m_sampler->getCurrentWritePosition();
-    vTaskDelay(pdMS_TO_TICKS(duration_ms));
-    const int end_index = m_sampler->getCurrentWritePosition();
-
-    const size_t captured_samples = static_cast<size_t>((end_index - start_index + m_sampler->getRingBufferSize()) % m_sampler->getRingBufferSize());
-    const size_t copy_samples = std::min(requested_samples, captured_samples);
-
-    RingBufferAccessor *reader = m_sampler->getRingBufferReader();
-    if (!reader)
+    const int ring_size = m_sampler->getRingBufferSize();
+    if (ring_size <= 0)
     {
-        Serial.println("[RECORD] ERROR: failed to create ring buffer reader");
+        Serial.println("[RECORD] ERROR: invalid ring buffer size");
         freeRecordingBuffer();
         return false;
     }
 
-    reader->setIndex(start_index);
-    for (size_t i = 0; i < copy_samples; i++)
+    int previous_write_position = m_sampler->getCurrentWritePosition();
+    const uint32_t backend_wait_start = millis();
+    while (previous_write_position == m_sampler->getCurrentWritePosition())
     {
-        m_recorded_samples[i] = reader->getCurrentSample();
-        reader->moveToNextSample();
+        if ((millis() - backend_wait_start) > BACKEND_READY_TIMEOUT_MS)
+        {
+            Serial.println("[RECORD] ERROR: audio backend not ready (no incoming samples)");
+            freeRecordingBuffer();
+            return false;
+        }
+        vTaskDelay(pdMS_TO_TICKS(CAPTURE_POLL_INTERVAL_MS));
     }
-    delete reader;
 
-    m_recorded_sample_count = copy_samples;
+    const uint32_t capture_start_ms = millis();
+    const uint32_t capture_deadline_ms = capture_start_ms + duration_ms + CAPTURE_EXTRA_TIMEOUT_MS;
+    size_t write_offset = 0;
+
+    while (write_offset < requested_samples)
+    {
+        const int current_write_position = m_sampler->getCurrentWritePosition();
+        int delta = current_write_position - previous_write_position;
+        if (delta < 0)
+        {
+            delta += ring_size;
+        }
+
+        if (delta > 0)
+        {
+            RingBufferAccessor *reader = m_sampler->getRingBufferReader();
+            if (!reader)
+            {
+                Serial.println("[RECORD] ERROR: failed to create ring buffer reader");
+                break;
+            }
+
+            reader->setIndex(previous_write_position);
+            const size_t remaining_samples = requested_samples - write_offset;
+            const size_t chunk_samples = std::min(static_cast<size_t>(delta), remaining_samples);
+
+            for (size_t i = 0; i < chunk_samples; i++)
+            {
+                m_recorded_samples[write_offset++] = reader->getCurrentSample();
+                reader->moveToNextSample();
+            }
+
+            delete reader;
+            previous_write_position = current_write_position;
+        }
+
+        if (millis() > capture_deadline_ms)
+        {
+            Serial.println("[RECORD] WARN: capture timeout, storing partial recording");
+            break;
+        }
+
+        if (write_offset < requested_samples)
+        {
+            vTaskDelay(pdMS_TO_TICKS(CAPTURE_POLL_INTERVAL_MS));
+        }
+    }
+
+    m_recorded_sample_count = write_offset;
     Serial.printf("[RECORD] total_recorded_bytes=%u\n", static_cast<unsigned>(m_recorded_sample_count * sizeof(int16_t)));
 
-    if (copy_samples < requested_samples)
+    if (m_recorded_sample_count == 0)
+    {
+        Serial.println("[RECORD] ERROR: captured 0 bytes");
+        freeRecordingBuffer();
+        return false;
+    }
+
+    if (m_recorded_sample_count < requested_samples)
     {
         Serial.printf("[RECORD] WARN: captured less than requested (captured=%u samples, requested=%u samples)\n",
-                      static_cast<unsigned>(copy_samples),
+                      static_cast<unsigned>(m_recorded_sample_count),
                       static_cast<unsigned>(requested_samples));
     }
 
@@ -189,4 +247,20 @@ bool AudioRecordPlayback::playRecorded()
     Serial.printf("[PLAY] playing recorded audio (%u bytes)\n",
                   static_cast<unsigned>(m_recorded_sample_count * sizeof(int16_t)));
     return true;
+}
+
+void AudioRecordPlayback::clearRecording()
+{
+    freeRecordingBuffer();
+    Serial.println("[RECORD] cleared recording buffer");
+}
+
+size_t AudioRecordPlayback::getRecordedBytes() const
+{
+    return m_recorded_sample_count * sizeof(int16_t);
+}
+
+bool AudioRecordPlayback::hasValidRecording() const
+{
+    return (m_recorded_samples != NULL) && (m_recorded_sample_count > 0);
 }

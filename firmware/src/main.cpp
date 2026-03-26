@@ -184,5 +184,5 @@ void loop()
   {
     g_console_commands->poll();
   }
-  vTaskDelay(1000);
+  vTaskDelay(pdMS_TO_TICKS(10));
 }

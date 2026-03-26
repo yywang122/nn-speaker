@@ -260,6 +260,15 @@ size_t AudioRecordPlayback::getRecordedBytes() const
     return m_recorded_sample_count * sizeof(int16_t);
 }
 
+uint32_t AudioRecordPlayback::getRecordedDurationMs() const
+{
+    if (m_recorded_sample_count == 0)
+    {
+        return 0;
+    }
+    return static_cast<uint32_t>((static_cast<uint64_t>(m_recorded_sample_count) * 1000ULL) / SAMPLE_RATE);
+}
+
 bool AudioRecordPlayback::hasValidRecording() const
 {
     return (m_recorded_samples != NULL) && (m_recorded_sample_count > 0);

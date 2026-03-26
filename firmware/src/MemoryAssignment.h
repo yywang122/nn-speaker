@@ -3,5 +3,6 @@
 
 void applyMemoryAssignmentPolicy();
 void printMemoryAssignmentInfo();
+void runExercise2MemoryAssignmentOutput();
 
 #endif

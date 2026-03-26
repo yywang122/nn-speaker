@@ -38,6 +38,7 @@ public:
     bool playRecorded();
     void clearRecording();
     size_t getRecordedBytes() const;
+    uint32_t getRecordedDurationMs() const;
     bool hasValidRecording() const;
 };
 

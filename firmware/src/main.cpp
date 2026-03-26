@@ -16,6 +16,7 @@
 #include "MemoryAssignment.h"
 #include "AudioRecordPlayback.h"
 #include "ConsoleCommands.h"
+#include "LedStateController.h"
 
 // i2s config for using the internal ADC
 i2s_config_t adcI2SConfig = {
@@ -114,9 +115,17 @@ void setup()
 {
   Serial.begin(115200);
   delay(1000);
-  Serial.println("Starting up");
 
+  // 1) memory assignment output first (screenshot-friendly)
   applyMemoryAssignmentPolicy();
+  runExercise2MemoryAssignmentOutput();
+
+  // 2) initialize LED before console/audio modules
+  IndicatorLight *indicator_light = new IndicatorLight();
+  LedStateController *led_state = new LedStateController(indicator_light);
+  led_state->setIdle();
+
+  Serial.println("Starting up");
 
   // start up wifi
   // launch WiFi
@@ -128,7 +137,6 @@ void setup()
     delay(5000);
     //ESP.restart();
   }
-  printMemoryAssignmentInfo();
 
   // startup SPIFFS for the wav files
   SPIFFS.begin();
@@ -150,10 +158,7 @@ void setup()
   i2s_output->start(I2S_NUM_0, i2s_codec_pins, i2sCodecConfig);
   Speaker *speaker = new Speaker(i2s_output);
   AudioRecordPlayback *audio_record_playback = new AudioRecordPlayback(i2s_sampler, i2s_output);
-  g_console_commands = new ConsoleCommands(audio_record_playback);
-
-  // indicator light to show when we are listening
-  IndicatorLight *indicator_light = new IndicatorLight();
+  g_console_commands = new ConsoleCommands(audio_record_playback, led_state);
 
   // and the intent processor
   IntentProcessor *intent_processor = new IntentProcessor(speaker);

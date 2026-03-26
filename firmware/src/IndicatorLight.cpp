@@ -46,6 +46,46 @@ void indicatorLedTask(void *param)
                     vTaskDelay(50 / portTICK_PERIOD_MS);
                     angle += 0.4 * M_PI;
                 }
+                break;
+            }
+            case IDLE:
+            {
+                // dim white as IDLE
+                ledcWrite(0, 32);
+                uart2_send((char *)"{8701ff}");
+                break;
+            }
+            case RECORDING:
+            {
+                // red
+                ledcWrite(0, 255);
+                uart2_send((char *)"{8701f1}");
+                break;
+            }
+            case PLAYING:
+            {
+                // blue
+                ledcWrite(0, 200);
+                uart2_send((char *)"{8701f4}");
+                break;
+            }
+            case ERROR:
+            {
+                // blinking red until state changes
+                while (indicator_light->getState() == ERROR)
+                {
+                    ledcWrite(0, 255);
+                    uart2_send((char *)"{8701f1}");
+                    vTaskDelay(pdMS_TO_TICKS(120));
+                    if (indicator_light->getState() != ERROR)
+                    {
+                        break;
+                    }
+                    ledcWrite(0, 0);
+                    uart2_send((char *)"{8701fe}");
+                    vTaskDelay(pdMS_TO_TICKS(120));
+                }
+                break;
             }
             }
         }
@@ -64,7 +104,7 @@ IndicatorLight::IndicatorLight()
     ledcAttachPin(2, 0);
     ledcWrite(0, 0);
     // start off with the light off
-    m_state = OFF;
+    m_state = IDLE;
     // set up the task for controlling the light
     xTaskCreate(indicatorLedTask, "Indicator LED Task", 4096, this, 1, &m_taskHandle);
 }

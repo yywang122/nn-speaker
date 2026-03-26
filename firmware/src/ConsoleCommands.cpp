@@ -4,10 +4,12 @@
 #include <stdint.h>
 
 #include "AudioRecordPlayback.h"
+#include "LedStateController.h"
 
-ConsoleCommands::ConsoleCommands(AudioRecordPlayback *audio_record_playback)
+ConsoleCommands::ConsoleCommands(AudioRecordPlayback *audio_record_playback, LedStateController *led_state)
 {
     m_audio_record_playback = audio_record_playback;
+    m_led_state = led_state;
     m_rx_length = 0;
     m_rx_buffer[0] = '\0';
 }
@@ -50,6 +52,14 @@ bool ConsoleCommands::parseDurationMs(const String &value, uint32_t &duration_ms
 
 void ConsoleCommands::handleLine(const String &line)
 {
+    auto indicateError = [this]() {
+        if (m_led_state)
+        {
+            m_led_state->showErrorBrief();
+            m_led_state->setIdle();
+        }
+    };
+
     String cleaned = line;
     cleaned.replace("\r", "");
     cleaned.replace("\n", "");
@@ -104,6 +114,7 @@ void ConsoleCommands::handleLine(const String &line)
         if (token_index != 1)
         {
             Serial.println("[CMD] ERROR: usage: help");
+            indicateError();
             return;
         }
         printHelp();
@@ -115,13 +126,15 @@ void ConsoleCommands::handleLine(const String &line)
         if (!m_audio_record_playback)
         {
             Serial.println("[RECORD] ERROR: audio record/playback service is NULL");
+            indicateError();
             return;
         }
 
         if (token_index == 2 && arg1 == "status")
         {
-            Serial.printf("[RECORD] status: recorded_bytes=%u, valid=%s\n",
+            Serial.printf("[RECORD] status: recorded_bytes=%u, duration_ms=%u, valid=%s\n",
                           static_cast<unsigned>(m_audio_record_playback->getRecordedBytes()),
+                          static_cast<unsigned>(m_audio_record_playback->getRecordedDurationMs()),
                           m_audio_record_playback->hasValidRecording() ? "yes" : "no");
             return;
         }
@@ -129,12 +142,17 @@ void ConsoleCommands::handleLine(const String &line)
         if (token_index == 2 && arg1 == "clear")
         {
             m_audio_record_playback->clearRecording();
+            if (m_led_state)
+            {
+                m_led_state->setIdle();
+            }
             return;
         }
 
         if (token_index != 2)
         {
             Serial.println("[RECORD] ERROR: usage: record <duration_ms>");
+            indicateError();
             return;
         }
 
@@ -142,10 +160,23 @@ void ConsoleCommands::handleLine(const String &line)
         if (!parseDurationMs(arg1, duration_ms))
         {
             Serial.println("[RECORD] ERROR: usage: record <duration_ms>");
+            indicateError();
             return;
         }
 
-        m_audio_record_playback->record(duration_ms);
+        if (m_led_state)
+        {
+            m_led_state->setRecording();
+        }
+        const bool ok = m_audio_record_playback->record(duration_ms);
+        if (m_led_state)
+        {
+            if (!ok)
+            {
+                m_led_state->showErrorBrief();
+            }
+            m_led_state->setIdle();
+        }
         return;
     }
 
@@ -156,18 +187,37 @@ void ConsoleCommands::handleLine(const String &line)
             if (!m_audio_record_playback)
             {
                 Serial.println("[PLAY] ERROR: audio record/playback service is NULL");
+                indicateError();
                 return;
             }
-            m_audio_record_playback->playRecorded();
+            if (m_led_state)
+            {
+                m_led_state->setPlaying();
+            }
+            const bool ok = m_audio_record_playback->playRecorded();
+            if (m_led_state)
+            {
+                if (!ok)
+                {
+                    m_led_state->showErrorBrief();
+                }
+                else
+                {
+                    vTaskDelay(pdMS_TO_TICKS(m_audio_record_playback->getRecordedDurationMs()));
+                }
+                m_led_state->setIdle();
+            }
             return;
         }
 
         Serial.println("[PLAY] ERROR: usage: play record");
+        indicateError();
         return;
     }
 
     (void)arg2;
     Serial.printf("[CMD] Unknown command: %s\n", cleaned.c_str());
+    indicateError();
 }
 
 void ConsoleCommands::poll()

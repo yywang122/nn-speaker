@@ -4,11 +4,13 @@
 #include <Arduino.h>
 
 class AudioRecordPlayback;
+class LedStateController;
 
 class ConsoleCommands
 {
 private:
     AudioRecordPlayback *m_audio_record_playback;
+    LedStateController *m_led_state;
     static constexpr size_t RX_BUFFER_SIZE = 128;
     char m_rx_buffer[RX_BUFFER_SIZE];
     size_t m_rx_length;
@@ -18,7 +20,7 @@ private:
     void printHelp() const;
 
 public:
-    explicit ConsoleCommands(AudioRecordPlayback *audio_record_playback);
+    ConsoleCommands(AudioRecordPlayback *audio_record_playback, LedStateController *led_state);
     void poll();
 };
 

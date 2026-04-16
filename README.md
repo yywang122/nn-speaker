@@ -1,3 +1,8 @@
+## 🎥 Demo
+This is the demonstration of our wake word detection system:
+
+[![Watch the video](https://img.youtube.com/vi/6gtmLx2jUpM/0.jpg)](https://youtu.be/6gtmLx2jUpM)
+
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Z8Z734F5Y)
 # DIY Alexa With the ESP32 and Wit.AI
 

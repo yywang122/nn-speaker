@@ -1,10 +1,3 @@
-// for hw3 modified: implementation of DetectRecordWordState
-// Flow:
-//   Phase 1 WAITING_START: run NN continuously; when start-word confirmed (1×)
-//     → LED stays ON (長開) → print "Starting recording" → arm AudioRecorder
-//   Phase 2 RECORDING: show ASCII Spectrum Visualizer; run NN; when end-word confirmed (1×)
-//     → stop recorder → LED blink 1× → print "End recording" → play back audio
-//   → return true to Application (go back to DetectWakeWordState / sleep)
 #include <Arduino.h>
 #include <math.h>
 #include "I2SSampler.h"
@@ -22,45 +15,31 @@
 #define POOLING_SIZE 6
 #define AUDIO_LENGTH 16000
 
-// Derived spectrogram dimensions (must match AudioProcessor internals)
-// fft_size = next power of 2 >= WINDOW_SIZE (320) = 512
-// energy_size = 512/2+1 = 257
-// pooled_energy_size = ceil(257/6) = 43
-// num_frames = (AUDIO_LENGTH - WINDOW_SIZE) / STEP_SIZE = 98
+// Spectrogram-related sizes
+// These values are determined by the audio settings above.
 #define SPEC_FFT_SIZE     512
-#define SPEC_ENERGY_SIZE  (SPEC_FFT_SIZE / 2 + 1)                              // 257
-#define SPEC_NUM_BINS     ((int)ceilf((float)SPEC_ENERGY_SIZE / POOLING_SIZE)) // 43
-#define SPEC_NUM_FRAMES   ((AUDIO_LENGTH - WINDOW_SIZE) / STEP_SIZE)           // 98
+#define SPEC_ENERGY_SIZE  (SPEC_FFT_SIZE / 2 + 1)                             
+#define SPEC_NUM_BINS     ((int)ceilf((float)SPEC_ENERGY_SIZE / POOLING_SIZE)) 
+#define SPEC_NUM_FRAMES   ((AUDIO_LENGTH - WINDOW_SIZE) / STEP_SIZE)           
 
 // ─── ASCII Spectrum Visualizer ────────────────────────────────────────────────
-// Copied from reference project (nn-speaker/firmware) DetectWakeWordState.cpp,
-// with absolute normalization applied (floor=-5.0, ceiling=2.0) so that
-// silence stays quiet-looking instead of stretching to fill all 9 levels.
-//
-// Pipeline:
-//   spec[98][43]  → average time axis → bin_energy[43]
-//   → map each bin to 0–8 level (absolute scale)
-//   → scale 43 bins to 99 display columns
-//   → print one line with rainbow ANSI colors
 
 static void printSpectrum(float *spec)
 {
     static const char  chars[]    = ".:-=+*#%@";
-    static const int   num_chars  = 9;
+    static const int   num_chars  = 5;
     static const int   line_width = 99;
 
-    // rainbow order: violet (quiet) → bright white (loud)
+    // simple color mapping for sound intensity (low → high)
+    
     static const char *colors[] = {
-        "\033[35m",       // . violet
-        "\033[34m",       // : indigo/blue
-        "\033[36m",       // - blue/cyan
-        "\033[32m",       // = green
-        "\033[33m",       // + yellow
-        "\033[38;5;214m", // * orange  (256-color)
-        "\033[31m",       // # red
-        "\033[91m",       // % bright red
-        "\033[97m",       // @ bright white (loud)
+    "\033[34m", // blue (quiet)
+    "\033[36m", // cyan
+    "\033[32m", // green
+    "\033[33m", // yellow
+    "\033[31m"  // red (loud)
     };
+
     static const char *reset = "\033[0m";
 
     // Step 1: collapse time axis — average 98 frames → 43 bin energies

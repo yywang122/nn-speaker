@@ -1,5 +1,5 @@
-// for hw3 modified: header for the record-word model
-// Declares the renamed array from model_recordword.cc.
+// record-word model
+// model_recordword.cc.
 // Use this instead of model.h when constructing a NeuralNetwork for record-word detection.
 #ifndef __model_recordword_h__
 #define __model_recordword_h__

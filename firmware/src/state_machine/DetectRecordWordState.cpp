@@ -27,17 +27,19 @@
 static void printSpectrum(float *spec)
 {
     static const char  chars[]    = ".+=#$@%";
-    static const int   num_chars  = 5;
+    static const int   num_chars  = 7;
     static const int   line_width = 99;
 
     // simple color mapping for sound intensity (low → high)
     
     static const char *colors[] = {
-    "\033[34m", // blue (quiet)
-    "\033[36m", // cyan
-    "\033[32m", // green
-    "\033[33m", // yellow
-    "\033[31m"  // red (loud)
+    "\033[35m",      
+    "\033[34m",      
+    "\033[36m",     
+    "\033[32m",      
+    "\033[33m",      
+    "\033[38;5;214m",
+    "\033[31m",       
     };
 
     static const char *reset = "\033[0m";

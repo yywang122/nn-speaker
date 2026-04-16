@@ -26,7 +26,7 @@
 
 static void printSpectrum(float *spec)
 {
-    static const char  chars[]    = ".:-=+*#%@";
+    static const char  chars[]    = ".+=#$@";
     static const int   num_chars  = 5;
     static const int   line_width = 99;
 
